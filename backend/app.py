@@ -8,7 +8,15 @@ from flask import Flask, request, jsonify, send_from_directory, Response
 import imap_extractor
 
 BASE_DIR = Path(__file__).resolve().parent
-FRONTEND_DIR = (BASE_DIR.parent / 'frontend').resolve()
+
+FRONTEND_DIR = None
+for candidate in ['public', 'frontend', '.']:
+    p = (BASE_DIR.parent / candidate).resolve()
+    if p.is_dir() and (p / 'index.html').exists():
+        FRONTEND_DIR = p
+        break
+if FRONTEND_DIR is None:
+    FRONTEND_DIR = (BASE_DIR.parent / 'public').resolve()
 
 app = Flask(__name__, static_folder=None)
 app.config['MAX_CONTENT_LENGTH'] = 2 * 1024 * 1024

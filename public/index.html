@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MailCMH — Email Extractor</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <h1 class="brand">✉️ MailCMH</h1>
+      <span class="brand-sub">IMAP Email Extractor</span>
+      <div class="topbar-right">
+        <label class="switch-wrap">
+          <input type="checkbox" id="autoRefresh" />
+          <span class="switch-label">Auto-check new emails</span>
+        </label>
+        <button class="btn btn-ghost" id="refreshBtn" title="Check for new emails">⟳ Check new</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="app">
+    <section class="card" id="mailboxCard">
+      <div class="card-header">
+        <h2>1 · Mailbox connection</h2>
+        <span class="provider-tag" id="providerTag">Provider auto-detected</span>
+      </div>
+
+      <div class="field">
+        <label for="email">Email address</label>
+        <input type="email" id="email" placeholder="you@example.com" autocomplete="username" />
+      </div>
+      <div class="field">
+        <label for="password">Password / App password</label>
+        <input type="password" id="password" placeholder="••••••••" autocomplete="current-password" />
+        <small class="hint">Never stored. Sent only to your IMAP server for this request.</small>
+      </div>
+
+      <div class="row">
+        <div class="field flex1">
+          <label for="host">IMAP host <span class="opt">(optional)</span></label>
+          <input type="text" id="host" placeholder="auto-detect" />
+        </div>
+        <div class="field small">
+          <label for="port">Port</label>
+          <input type="number" id="port" placeholder="993" min="1" max="65535" />
+        </div>
+      </div>
+
+      <div class="actions">
+        <button class="btn btn-primary" id="testBtn">Test connection</button>
+        <button class="btn btn-secondary" id="loadFoldersBtn" disabled>Load folders</button>
+      </div>
+
+      <div id="mailboxError" class="error-box hidden"></div>
+      <div id="mailboxSuccess" class="success-box hidden"></div>
+    </section>
+
+    <section class="card" id="foldersCard">
+      <div class="card-header">
+        <h2>2 · Folders / categories</h2>
+        <span class="count-badge" id="folderCount">0 selected</span>
+      </div>
+      <input type="text" id="folderSearch" class="search" placeholder="Search folders…" />
+      <div class="folder-grid" id="folderList"></div>
+    </section>
+
+    <section class="card" id="fieldsCard">
+      <div class="card-header">
+        <h2>3 · Data fields</h2>
+        <button class="link-btn" id="toggleFields">Select all</button>
+      </div>
+      <div class="field-grid" id="fieldList"></div>
+    </section>
+
+    <section class="card" id="rangeCard">
+      <div class="card-header"><h2>4 · Email range</h2></div>
+      <div class="row range-row">
+        <div class="field small">
+          <label for="startFrom">Start from</label>
+          <input type="number" id="startFrom" value="1" min="1" />
+        </div>
+        <div class="field small">
+          <label for="count">How many</label>
+          <select id="count">
+            <option value="25">25</option>
+            <option value="50">50</option>
+            <option value="100" selected>100</option>
+            <option value="250">250</option>
+            <option value="500">500</option>
+          </select>
+        </div>
+      </div>
+      <button class="btn btn-primary btn-block" id="extractBtn" disabled>Start extraction</button>
+    </section>
+
+    <section class="card" id="progressCard">
+      <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+      <div class="progress-text" id="progressText">Ready</div>
+      <div id="progressError" class="error-box hidden"></div>
+    </section>
+
+    <section class="card" id="resultsCard">
+      <div class="card-header">
+        <h2>Results</h2>
+        <div class="stats" id="stats">
+          <span class="stat"><b id="statFound">0</b> found</span>
+          <span class="stat"><b id="statSelected">0</b> selected</span>
+          <span class="stat"><b id="statDupes">0</b> duplicates</span>
+          <span class="stat"><b id="statProc">0</b> processed</span>
+          <span class="stat bad"><b id="statErr">0</b> errors</span>
+        </div>
+      </div>
+
+      <div class="toolbar">
+        <button class="btn btn-secondary" id="copyEmailsBtn">📋 Copy emails</button>
+        <button class="btn btn-secondary" id="copyAllBtn">Copy all</button>
+        <button class="btn btn-secondary" id="removeDupesBtn">Remove duplicates</button>
+        <span class="spacer"></span>
+        <button class="btn btn-secondary" id="exportCsvBtn">CSV</button>
+        <button class="btn btn-secondary" id="exportJsonBtn">JSON</button>
+      </div>
+
+      <input type="text" id="tableSearch" class="search" placeholder="Filter results…" />
+
+      <div class="table-wrap">
+        <table>
+          <thead id="tableHead"></thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+      </div>
+      <div class="empty" id="emptyState">No results yet. Start an extraction above.</div>
+    </section>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="/app.js"></script>
+</body>
+</html>
