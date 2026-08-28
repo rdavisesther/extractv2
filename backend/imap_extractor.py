@@ -43,7 +43,7 @@ def error_message(e):
         return 'Authentication failed. The mailbox rejected the credentials.'
     if any(k in msg for k in ('timeout', 'timed out')):
         return 'Connection timed out. The server did not respond in time.'
-    if any(k in msg for k in ('connection refused', 'ec onnrefused', 'connect')):
+    if any(k in msg for k in ('connection refused', 'ec onnrefused')):
         return 'Unable to connect to the mailbox server. Check the host and port settings.'
     if any(k in msg for k in ('name or service not known', 'getaddrinfo', 'not found', 'resolution')):
         return 'Could not resolve the mail server hostname. Check the email address or host settings.'
@@ -51,10 +51,12 @@ def error_message(e):
         return 'The provider temporarily limited requests. Please retry later.'
     if any(k in msg for k in ('ssl', 'tls', 'certificate')):
         return 'SSL/TLS handshake failed. The server certificate may be invalid.'
-    if 'a password' in msg or 'password' in msg and 'app password' in msg:
+    if 'password' in msg and ('app password' in msg or 'oauth' in msg):
         return 'Login failed. You may need an app password for this provider.'
-    if any(k in msg for k in ('permanent connection failure', 'no such mailbox')) is False and 'connection' in msg:
-        return 'Connection to the mailbox failed. Check provider settings.'
+    if 'not enough values to unpack' in msg:
+        return 'The mailbox server returned an unexpected response. Try a different folder or provider.'
+    if 'folder' in msg or 'mailbox' in msg:
+        return 'Could not open the selected folder. Check folder names.'
     return 'Unable to connect to the mailbox. Check the email address, app password, and provider settings.'
 
 
@@ -92,25 +94,38 @@ def test_connection(creds):
 def list_folders(creds):
     client = _connect(creds)
     try:
-        typ, data = client.list()
+        result = client.list()
+        if not result or not isinstance(result, tuple) or len(result) < 2:
+            return []
+        typ, data = result
+        if typ != 'OK' or not data:
+            return []
         folders = []
         for raw in data:
-            if not raw:
+            try:
+                if not raw:
+                    continue
+                if isinstance(raw, tuple):
+                    raw = raw[1] if len(raw) > 1 else raw[0]
+                line = raw.decode('utf-8', 'replace') if isinstance(raw, bytes) else str(raw)
+                line = line.strip()
+                if not line:
+                    continue
+                m = re.fullmatch(r'\((?P<flags>.*?)\)\s+"?(?P<delim>[^"]*)"?\s+(?P<name>.+)', line)
+                if m:
+                    delim = m.group('delim').strip() if m.group('delim') else ''
+                    name = m.group('name').strip().strip('"')
+                    flags = m.group('flags').strip()
+                    folders.append({
+                        'name': name,
+                        'path': name,
+                        'delimiter': delim or '/',
+                        'flags': flags.split() if flags else [],
+                    })
+                else:
+                    folders.append({'name': line, 'path': line, 'delimiter': '/', 'flags': []})
+            except Exception:
                 continue
-            line = raw.decode('utf-8', 'replace')
-            m = re.fullmatch(r'\((?P<flags>.*?)\)\s+"(?P<delim>[^"]*)"\s+(?P<name>.*)', line)
-            if m:
-                delim = m.group('delim')
-                name = m.group('name').strip('"')
-                flags = m.group('flags')
-                folders.append({
-                    'name': name,
-                    'path': name,
-                    'delimiter': delim or '/',
-                    'flags': flags.split() if flags else [],
-                })
-            else:
-                folders.append({'name': line, 'path': line, 'delimiter': '/', 'flags': []})
         return folders
     finally:
         try:
@@ -142,12 +157,6 @@ def _address_list(value):
     return ', '.join(out)
 
 
-def _address_emails(value):
-    if not value:
-        return ''
-    return ', '.join(addr for _, addr in getaddresses([value]) if addr)
-
-
 def _extract_body(msg):
     text = None
     html = None
@@ -155,32 +164,21 @@ def _extract_body(msg):
         for part in msg.walk():
             ctype = part.get_content_type()
             if ctype == 'text/plain' and text is None:
-                text = _decode(part.get_payload(decode=True)) if part.get_payload(decode=True) is not None else ''
-                if hasattr(part, 'get_content_charset') and part.get_content_charset():
-                    charset = part.get_content_charset()
-                    raw = part.get_payload(decode=True)
-                    if raw is not None:
-                        text = raw.decode(charset, 'replace')
+                raw = part.get_payload(decode=True)
+                if raw is not None:
+                    charset = part.get_content_charset() or 'utf-8'
+                    text = raw.decode(charset, 'replace')
             elif ctype == 'text/html' and html is None:
                 raw = part.get_payload(decode=True)
-                if raw is not None and part.get_content_charset():
-                    html = raw.decode(part.get_content_charset(), 'replace')
-                elif raw is not None:
-                    html = raw.decode('utf-8', 'replace')
+                if raw is not None:
+                    charset = part.get_content_charset() or 'utf-8'
+                    html = raw.decode(charset, 'replace')
     else:
-        text = msg.get_payload(decode=True)
-        if text is not None:
+        raw = msg.get_payload(decode=True)
+        if raw is not None:
             charset = msg.get_content_charset() or 'utf-8'
-            text = text.decode(charset, 'replace')
+            text = raw.decode(charset, 'replace')
     return (text or '').strip(), (html or '') or None
-
-
-def _strip_tags(html):
-    text = re.sub(r'<style[^>]*>.*?</style>', ' ', html, flags=re.DOTALL | re.IGNORECASE)
-    text = re.sub(r'<script[^>]*>.*?</script>', ' ', text, flags=re.DOTALL | re.IGNORECASE)
-    text = re.sub(r'<[^>]+>', ' ', text)
-    text = re.sub(r'\s+', ' ', text)
-    return text.strip()
 
 
 def _attachments(msg):
@@ -201,25 +199,31 @@ def extract_emails(creds, folders, start_from, count, fields):
     skipped = 0
     errors = 0
     try:
-        want_uid = 'uid' in fields
-        want_envelope = any(f in fields for f in ('subject', 'date', 'messageId'))
         for folder in folders:
             if found >= count:
                 break
+
             try:
-                typ, data = client.select(folder, readonly=True)
+                result = client.select(folder, readonly=True)
+                if not result or not isinstance(result, tuple) or len(result) < 2:
+                    errors += 1
+                    continue
+                typ, data = result
                 if typ != 'OK':
                     errors += 1
                     continue
             except Exception:
                 errors += 1
                 continue
+
             try:
-                total_msgs = int(data[0])
+                total_msgs = int(data[0]) if data and data[0] else 0
             except Exception:
                 total_msgs = 0
+
             if total_msgs == 0:
                 continue
+
             start = max(1, int(start_from or 1))
             end = min(start + int(count or 100) - 1, total_msgs)
             if start > total_msgs:
@@ -227,39 +231,55 @@ def extract_emails(creds, folders, start_from, count, fields):
                 continue
             if end < start:
                 continue
+
             seq = f'{start}:{end}'
-            fetch = '(BODY.PEEK[])'
-            if want_uid:
-                fetch = f'(UID {fetch})'
-            typ, msgs = client.fetch(seq, fetch)
-            if typ != 'OK':
+            fetch_cmd = f'(BODY.PEEK[])'
+
+            try:
+                result = client.fetch(seq, fetch_cmd)
+                if not result or not isinstance(result, tuple) or len(result) < 2:
+                    errors += 1
+                    continue
+                typ, msgs = result
+                if typ != 'OK' or not msgs:
+                    errors += 1
+                    continue
+            except Exception:
                 errors += 1
                 continue
-            for mnum, data_block in reversed(msgs):
+
+            for item in msgs:
                 if found >= count:
                     break
                 processed += 1
                 try:
-                    raw = None
-                    uid = None
-                    if isinstance(data_block, tuple):
-                        meta = data_block[0].decode('utf-8', 'replace')
-                        body = data_block[1]
-                        # meta looks like b'1 (UID 123 BODY[HEADER] {xxx}' or '1 (BODY[] {xxx}'
-                        m_uid = re.search(r'UID\s+(\d+)', meta)
-                        if m_uid:
-                            uid = m_uid.group(1)
-                        if body is None:
-                            skipped += 1
-                            continue
-                        msg = email.message_from_bytes(body)
-                    else:
-                        # likely a status response line; skip
+                    if not item or not isinstance(item, tuple) or len(item) < 2:
                         skipped += 1
                         continue
 
+                    meta_part = item[0]
+                    body_part = item[1]
+
+                    meta = ''
+                    if isinstance(meta_part, bytes):
+                        meta = meta_part.decode('utf-8', 'replace')
+                    elif isinstance(meta_part, str):
+                        meta = meta_part
+
+                    uid = None
+                    m_uid = re.search(r'UID\s+(\d+)', meta)
+                    if m_uid:
+                        uid = m_uid.group(1)
+
+                    if body_part is None:
+                        skipped += 1
+                        continue
+
+                    msg = email.message_from_bytes(body_part)
+
                     row = {'uid': uid, 'folder': folder}
                     text_body, html_body = _extract_body(msg)
+
                     for f in fields:
                         if f == 'fromName':
                             row['fromName'] = parseaddr(_decode(msg.get('From', '')))[0] or None
@@ -291,6 +311,7 @@ def extract_emails(creds, folders, start_from, count, fields):
                     rows.append(row)
                 except Exception:
                     errors += 1
+
         return {'results': rows, 'stats': {
             'processed': processed, 'found': found, 'skipped': skipped, 'errors': errors,
         }}
