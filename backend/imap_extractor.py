@@ -3,7 +3,7 @@ import ssl
 import email
 import re
 from email.header import decode_header, make_header
-from email.utils import parsedate_to_datetime, getaddresses, parseaddr
+from email.utils import getaddresses, parseaddr
 
 PROVIDERS = {
     'gmail.com': ('imap.gmail.com', 993, 'Gmail'),
@@ -39,37 +39,35 @@ def build_client_config(creds):
 
 def error_message(e):
     msg = str(e).lower()
-    if any(k in msg for k in ('invalid credentials', 'authentication failed', 'login failed', 'authentication')):
-        return 'Authentication failed. The mailbox rejected the credentials.'
+    if 'not enough values to unpack' in msg or 'too many values to unpack' in msg:
+        return 'Server returned unexpected data. Try again or use fewer folders.'
+    if any(k in msg for k in ('invalid credentials', 'authentication failed', 'login failed')):
+        return 'Authentication failed. Check your email and app password.'
     if any(k in msg for k in ('timeout', 'timed out')):
-        return 'Connection timed out. The server did not respond in time.'
+        return 'Connection timed out. Server did not respond.'
     if any(k in msg for k in ('connection refused', 'ec onnrefused')):
-        return 'Unable to connect to the mailbox server. Check the host and port settings.'
-    if any(k in msg for k in ('name or service not known', 'getaddrinfo', 'not found', 'resolution')):
-        return 'Could not resolve the mail server hostname. Check the email address or host settings.'
-    if any(k in msg for k in ('rate limit', 'too many', 'log in disabled', 'too many simultaneous')):
-        return 'The provider temporarily limited requests. Please retry later.'
+        return 'Cannot connect. Check host and port.'
+    if any(k in msg for k in ('name or service not known', 'getaddrinfo')):
+        return 'Cannot resolve hostname. Check your email or host.'
     if any(k in msg for k in ('ssl', 'tls', 'certificate')):
-        return 'SSL/TLS handshake failed. The server certificate may be invalid.'
-    if 'password' in msg and ('app password' in msg or 'oauth' in msg):
-        return 'Login failed. You may need an app password for this provider.'
-    if 'not enough values to unpack' in msg:
-        return 'The mailbox server returned an unexpected response. Try a different folder or provider.'
-    if 'folder' in msg or 'mailbox' in msg:
-        return 'Could not open the selected folder. Check folder names.'
-    return 'Unable to connect to the mailbox. Check the email address, app password, and provider settings.'
+        return 'SSL/TLS error. Certificate issue.'
+    if 'memory' in msg or 'memoryview' in msg:
+        return 'Server returned corrupted data. Try again.'
+    if 'option' in msg and 'not' in msg:
+        return 'IMAP command not supported by this server.'
+    return 'Connection failed. Check email, password, and server settings.'
 
 
 def _connect(creds):
     cfg = build_client_config(creds)
     host = cfg['host']
     if not host:
-        raise ValueError('Could not detect IMAP server for this email domain. Provide host and port manually.')
+        raise ValueError('Could not detect IMAP server. Provide host and port manually.')
     ctx = ssl.create_default_context()
     client = imaplib.IMAP4_SSL(host, cfg['port'], ssl_context=ctx, timeout=20)
     try:
         client.login(creds['email'], creds['password'])
-    except imaplib.IMAP4.error as e:
+    except Exception as e:
         try:
             client.logout()
         except Exception:
@@ -78,26 +76,34 @@ def _connect(creds):
     return client
 
 
+def _safe_tuple(val, expected=2):
+    if isinstance(val, tuple) and len(val) >= expected:
+        return val
+    return None
+
+
 def test_connection(creds):
     try:
         client = _connect(creds)
-        client.logout()
+        try:
+            client.logout()
+        except Exception:
+            pass
         provider = detect_provider(creds.get('email'))
         return {'success': True, 'provider': provider['name'] if provider else 'Custom IMAP', 'error': None}
-    except ValueError as e:
+    except Exception as e:
         provider = detect_provider(creds.get('email'))
         return {'success': False, 'provider': provider['name'] if provider else 'Custom IMAP', 'error': str(e)}
-    except Exception as e:
-        return {'success': False, 'provider': 'Custom IMAP', 'error': error_message(e)}
 
 
 def list_folders(creds):
     client = _connect(creds)
     try:
         result = client.list()
-        if not result or not isinstance(result, tuple) or len(result) < 2:
+        pair = _safe_tuple(result, 2)
+        if not pair:
             return []
-        typ, data = result
+        typ, data = pair
         if typ != 'OK' or not data:
             return []
         folders = []
@@ -105,22 +111,18 @@ def list_folders(creds):
             try:
                 if not raw:
                     continue
-                if isinstance(raw, tuple):
-                    raw = raw[1] if len(raw) > 1 else raw[0]
                 line = raw.decode('utf-8', 'replace') if isinstance(raw, bytes) else str(raw)
                 line = line.strip()
                 if not line:
                     continue
                 m = re.fullmatch(r'\((?P<flags>.*?)\)\s+"?(?P<delim>[^"]*)"?\s+(?P<name>.+)', line)
                 if m:
-                    delim = m.group('delim').strip() if m.group('delim') else ''
                     name = m.group('name').strip().strip('"')
-                    flags = m.group('flags').strip()
                     folders.append({
                         'name': name,
                         'path': name,
-                        'delimiter': delim or '/',
-                        'flags': flags.split() if flags else [],
+                        'delimiter': m.group('delim').strip() if m.group('delim') else '/',
+                        'flags': m.group('flags').split() if m.group('flags').strip() else [],
                     })
                 else:
                     folders.append({'name': line, 'path': line, 'delimiter': '/', 'flags': []})
@@ -140,54 +142,69 @@ def _decode(value):
     try:
         return str(make_header(decode_header(value)))
     except Exception:
-        return str(value)
+        try:
+            return str(value)
+        except Exception:
+            return ''
 
 
 def _address_list(value):
     if not value:
         return ''
-    out = []
-    for name, addr in getaddresses([value]):
-        if name and addr:
-            out.append(f'{name} <{addr}>')
-        elif addr:
-            out.append(addr)
-        elif name:
-            out.append(name)
-    return ', '.join(out)
+    try:
+        out = []
+        for name, addr in getaddresses([str(value)]):
+            if name and addr:
+                out.append(f'{name} <{addr}>')
+            elif addr:
+                out.append(addr)
+            elif name:
+                out.append(name)
+        return ', '.join(out)
+    except Exception:
+        return str(value)
 
 
 def _extract_body(msg):
     text = None
     html = None
-    if msg.is_multipart():
-        for part in msg.walk():
-            ctype = part.get_content_type()
-            if ctype == 'text/plain' and text is None:
-                raw = part.get_payload(decode=True)
-                if raw is not None:
-                    charset = part.get_content_charset() or 'utf-8'
-                    text = raw.decode(charset, 'replace')
-            elif ctype == 'text/html' and html is None:
-                raw = part.get_payload(decode=True)
-                if raw is not None:
-                    charset = part.get_content_charset() or 'utf-8'
-                    html = raw.decode(charset, 'replace')
-    else:
-        raw = msg.get_payload(decode=True)
-        if raw is not None:
-            charset = msg.get_content_charset() or 'utf-8'
-            text = raw.decode(charset, 'replace')
-    return (text or '').strip(), (html or '') or None
+    try:
+        if msg.is_multipart():
+            for part in msg.walk():
+                try:
+                    ctype = part.get_content_type()
+                    if ctype == 'text/plain' and text is None:
+                        raw = part.get_payload(decode=True)
+                        if raw is not None:
+                            charset = part.get_content_charset() or 'utf-8'
+                            text = raw.decode(charset, 'replace')
+                    elif ctype == 'text/html' and html is None:
+                        raw = part.get_payload(decode=True)
+                        if raw is not None:
+                            charset = part.get_content_charset() or 'utf-8'
+                            html = raw.decode(charset, 'replace')
+                except Exception:
+                    continue
+        else:
+            raw = msg.get_payload(decode=True)
+            if raw is not None:
+                charset = msg.get_content_charset() or 'utf-8'
+                text = raw.decode(charset, 'replace')
+    except Exception:
+        pass
+    return (text or '').strip() or None, (html or '') or None
 
 
 def _attachments(msg):
     out = []
-    if msg.is_multipart():
-        for part in msg.walk():
-            fn = part.get_filename()
-            if fn:
-                out.append(_decode(fn) or 'unnamed')
+    try:
+        if msg.is_multipart():
+            for part in msg.walk():
+                fn = part.get_filename()
+                if fn:
+                    out.append(_decode(fn) or 'unnamed')
+    except Exception:
+        pass
     return out
 
 
@@ -203,21 +220,27 @@ def extract_emails(creds, folders, start_from, count, fields):
             if found >= count:
                 break
 
+            pair = None
             try:
-                result = client.select(folder, readonly=True)
-                if not result or not isinstance(result, tuple) or len(result) < 2:
-                    errors += 1
-                    continue
-                typ, data = result
-                if typ != 'OK':
-                    errors += 1
-                    continue
+                pair = client.select(folder, readonly=True)
             except Exception:
                 errors += 1
                 continue
 
+            pair = _safe_tuple(pair, 2)
+            if not pair:
+                errors += 1
+                continue
+
+            typ, data = pair
+            if typ != 'OK':
+                errors += 1
+                continue
+
+            total_msgs = 0
             try:
-                total_msgs = int(data[0]) if data and data[0] else 0
+                if data and data[0]:
+                    total_msgs = int(data[0])
             except Exception:
                 total_msgs = 0
 
@@ -233,18 +256,20 @@ def extract_emails(creds, folders, start_from, count, fields):
                 continue
 
             seq = f'{start}:{end}'
-            fetch_cmd = f'(BODY.PEEK[])'
-
+            fetch_pair = None
             try:
-                result = client.fetch(seq, fetch_cmd)
-                if not result or not isinstance(result, tuple) or len(result) < 2:
-                    errors += 1
-                    continue
-                typ, msgs = result
-                if typ != 'OK' or not msgs:
-                    errors += 1
-                    continue
+                fetch_pair = client.fetch(seq, '(BODY.PEEK[])')
             except Exception:
+                errors += 1
+                continue
+
+            fetch_pair = _safe_tuple(fetch_pair, 2)
+            if not fetch_pair:
+                errors += 1
+                continue
+
+            ftyp, msgs = fetch_pair
+            if ftyp != 'OK' or not msgs:
                 errors += 1
                 continue
 
@@ -253,25 +278,29 @@ def extract_emails(creds, folders, start_from, count, fields):
                     break
                 processed += 1
                 try:
-                    if not item or not isinstance(item, tuple) or len(item) < 2:
+                    pair = _safe_tuple(item, 2)
+                    if not pair:
                         skipped += 1
                         continue
 
-                    meta_part = item[0]
-                    body_part = item[1]
-
-                    meta = ''
-                    if isinstance(meta_part, bytes):
-                        meta = meta_part.decode('utf-8', 'replace')
-                    elif isinstance(meta_part, str):
-                        meta = meta_part
+                    meta_part, body_part = pair
 
                     uid = None
-                    m_uid = re.search(r'UID\s+(\d+)', meta)
-                    if m_uid:
-                        uid = m_uid.group(1)
+                    if isinstance(meta_part, bytes):
+                        meta_str = meta_part.decode('utf-8', 'replace')
+                        m_uid = re.search(r'UID\s+(\d+)', meta_str)
+                        if m_uid:
+                            uid = m_uid.group(1)
+                    elif isinstance(meta_part, str):
+                        m_uid = re.search(r'UID\s+(\d+)', meta_part)
+                        if m_uid:
+                            uid = m_uid.group(1)
 
                     if body_part is None:
+                        skipped += 1
+                        continue
+
+                    if not isinstance(body_part, bytes):
                         skipped += 1
                         continue
 
@@ -281,32 +310,35 @@ def extract_emails(creds, folders, start_from, count, fields):
                     text_body, html_body = _extract_body(msg)
 
                     for f in fields:
-                        if f == 'fromName':
-                            row['fromName'] = parseaddr(_decode(msg.get('From', '')))[0] or None
-                        elif f == 'fromEmail':
-                            row['fromEmail'] = parseaddr(_decode(msg.get('From', '')))[1] or None
-                        elif f == 'to':
-                            row['to'] = _address_list(msg.get('To')) or None
-                        elif f == 'cc':
-                            row['cc'] = _address_list(msg.get('Cc')) or None
-                        elif f == 'bcc':
-                            row['bcc'] = _address_list(msg.get('Bcc')) or None
-                        elif f == 'subject':
-                            row['subject'] = _decode(msg.get('Subject')) or None
-                        elif f == 'date':
-                            row['date'] = _decode(msg.get('Date')) or None
-                        elif f == 'messageId':
-                            row['messageId'] = _decode(msg.get('Message-ID')) or None
-                        elif f == 'replyTo':
-                            row['replyTo'] = _address_list(msg.get('Reply-To')) or None
-                        elif f == 'body':
-                            row['body'] = text_body or None
-                        elif f == 'textBody':
-                            row['textBody'] = text_body or None
-                        elif f == 'htmlBody':
-                            row['htmlBody'] = html_body
-                        elif f == 'attachments':
-                            row['attachments'] = _attachments(msg)
+                        try:
+                            if f == 'fromName':
+                                row['fromName'] = parseaddr(_decode(msg.get('From', '')))[0] or None
+                            elif f == 'fromEmail':
+                                row['fromEmail'] = parseaddr(_decode(msg.get('From', '')))[1] or None
+                            elif f == 'to':
+                                row['to'] = _address_list(msg.get('To')) or None
+                            elif f == 'cc':
+                                row['cc'] = _address_list(msg.get('Cc')) or None
+                            elif f == 'bcc':
+                                row['bcc'] = _address_list(msg.get('Bcc')) or None
+                            elif f == 'subject':
+                                row['subject'] = _decode(msg.get('Subject')) or None
+                            elif f == 'date':
+                                row['date'] = _decode(msg.get('Date')) or None
+                            elif f == 'messageId':
+                                row['messageId'] = _decode(msg.get('Message-ID')) or None
+                            elif f == 'replyTo':
+                                row['replyTo'] = _address_list(msg.get('Reply-To')) or None
+                            elif f == 'body':
+                                row['body'] = text_body
+                            elif f == 'textBody':
+                                row['textBody'] = text_body
+                            elif f == 'htmlBody':
+                                row['htmlBody'] = html_body
+                            elif f == 'attachments':
+                                row['attachments'] = _attachments(msg)
+                        except Exception:
+                            pass
                     found += 1
                     rows.append(row)
                 except Exception:
