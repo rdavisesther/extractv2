@@ -247,7 +247,7 @@ async function runExtraction() {
     addResults(r.results || [], body.folders);
     const s = r.stats || {};
     setProgress(100, `Done in ${((Date.now() - t0) / 1000).toFixed(1)}s — ${s.found} found, ${s.errors} errors.`);
-    if (s.errors > 0) showErr($('#progressError'), `${s.errors} message(s) could not be parsed and were skipped.`);
+    
   } catch (e) {
     showErr($('#progressError'), e.message);
     setProgress(0, 'Extraction failed.');
