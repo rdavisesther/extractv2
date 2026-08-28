@@ -16,18 +16,11 @@ const PROVIDERS = {
 
 const FIELDS = [
   ['fromName', 'From Name'],
-  ['fromEmail', 'From Email'],
-  ['to', 'To'],
-  ['cc', 'CC'],
-  ['bcc', 'BCC'],
   ['subject', 'Subject'],
-  ['date', 'Date'],
-  ['messageId', 'Message ID'],
-  ['replyTo', 'Reply-To'],
-  ['body', 'Body'],
-  ['htmlBody', 'HTML'],
-  ['textBody', 'Text body'],
-  ['attachments', 'Attachments'],
+  ['spfDomain', 'Domains in SPF'],
+  ['spfStatus', 'SPF Status'],
+  ['dkimStatus', 'DKIM Status'],
+  ['senderIP', 'IP'],
 ];
 
 let allResults = []; // {row, folder, selected}
@@ -202,7 +195,7 @@ function renderFields() {
     const cb = document.createElement('input');
     cb.type = 'checkbox';
     cb.value = key;
-    cb.checked = ['fromEmail', 'subject', 'fromName', 'date'].includes(key);
+    cb.checked = ['fromName', 'subject', 'spfDomain', 'spfStatus', 'dkimStatus', 'senderIP'].includes(key);
     cb.addEventListener('change', updateFields);
     const span = document.createElement('span');
     span.textContent = label;
@@ -237,7 +230,7 @@ async function runExtraction() {
     folders,
     startFrom: parseInt($('#startFrom').value || '1', 10),
     count: parseInt($('#count').value || '100', 10),
-    fields: currentFields.length ? currentFields : ['fromEmail', 'subject', 'fromName', 'date'],
+    fields: currentFields.length ? currentFields : ['fromName', 'subject', 'spfDomain', 'spfStatus', 'dkimStatus', 'senderIP'],
   };
   const t0 = Date.now();
   try {
@@ -387,7 +380,7 @@ function filteredRows() {
 
 function renderStats() {
   const selected = allResults.filter((x) => x.selected).length;
-  const sizes = new Set(allResults.map((x) => x.row.fromEmail || '').filter(Boolean));
+  const sizes = new Set(allResults.map((x) => JSON.stringify(x.row)).filter(Boolean));
   const dupes = allResults.length - sizes.size;
   $('#statFound').textContent = allResults.length;
   $('#statSelected').textContent = selected;
@@ -397,9 +390,9 @@ function renderStats() {
 
 // ---------- Toolbar actions ----------
 $('#copyEmailsBtn').addEventListener('click', async () => {
-  const sel = allResults.filter((x) => x.selected && x.row.fromEmail);
-  const list = sel.length ? sel : allResults.filter((x) => x.row.fromEmail);
-  const text = [...new Set(list.map((x) => x.row.fromEmail).filter(Boolean))].join('\n');
+  const sel = allResults.filter((x) => x.selected);
+  const list = sel.length ? sel : allResults;
+  const text = list.map((x) => x.row.subject || x.row.fromName || '').filter(Boolean).join('\n');
   await copyText(text || 'No emails found.');
 });
 $('#copyAllBtn').addEventListener('click', async () => {
@@ -415,7 +408,7 @@ async function copyText(text) {
 $('#removeDupesBtn').addEventListener('click', () => {
   const seen = new Set();
   allResults = allResults.filter((x) => {
-    const k = x.row.messageId || x.row.fromEmail || JSON.stringify(x.row);
+    const k = x.row.subject || JSON.stringify(x.row);
     if (seen.has(k)) return false;
     seen.add(k);
     return true;

@@ -208,6 +208,86 @@ def _attachments(msg):
     return out
 
 
+def _extract_spf_domain(msg):
+    try:
+        auth = _decode(msg.get('Authentication-Results', ''))
+        if not auth:
+            auth = _decode(msg.get('Received-SPF', ''))
+        m = re.search(r'spf\s*=\s*\w+\s*\(?domain\s+of\s+[\w@.-]+\s+designates\s+([\d.]+)\s+as\s+permitted\s+sender', auth, re.I)
+        if m:
+            return m.group(1)
+        m = re.search(r'spf[=:]\s*\w+\s+.*?domain=([\w@.-]+)', auth, re.I)
+        if m:
+            return m.group(1)
+        received = _decode(msg.get('Received', ''))
+        m = re.search(r'from\s+([\w.-]+)\s+\(', received)
+        if m:
+            return m.group(1)
+        m = re.search(r'by\s+([\w.-]+)\s', received)
+        if m:
+            return m.group(1)
+        from_header = _decode(msg.get('From', ''))
+        m = re.search(r'@([\w.-]+)', from_header)
+        if m:
+            return m.group(1)
+    except Exception:
+        pass
+    return None
+
+
+def _extract_spf_status(msg):
+    try:
+        auth = _decode(msg.get('Authentication-Results', ''))
+        m = re.search(r'spf[=:]\s*(\w+)', auth, re.I)
+        if m:
+            return m.group(1).lower()
+        received_spf = _decode(msg.get('Received-SPF', ''))
+        if received_spf:
+            m = re.match(r'(\w+)', received_spf)
+            if m:
+                return m.group(1).lower()
+    except Exception:
+        pass
+    return None
+
+
+def _extract_dkim_status(msg):
+    try:
+        auth = _decode(msg.get('Authentication-Results', ''))
+        m = re.search(r'dkim[=:]\s*(\w+)', auth, re.I)
+        if m:
+            return m.group(1).lower()
+    except Exception:
+        pass
+    return None
+
+
+def _extract_sender_ip(msg):
+    try:
+        auth = _decode(msg.get('Authentication-Results', ''))
+        m = re.search(r'bringing\s+ IPAddress=(\d+\.\d+\.\d+\.\d+)', auth, re.I)
+        if m:
+            return m.group(1)
+        received_spf = _decode(msg.get('Received-SPF', ''))
+        m = re.search(r'designates\s+(\d+\.\d+\.\d+\.\d+)\s+as\s+permitted', received_spf, re.I)
+        if m:
+            return m.group(1)
+        received = _decode(msg.get('Received', ''))
+        m = re.search(r'\[(\d+\.\d+\.\d+\.\d+)\]', received)
+        if m:
+            return m.group(1)
+        m = re.search(r'from\s+\S+\s+\((?:helo|HELO|EHLO)?\s*=\s*[\w.-]*\s*\[(\d+\.\d+\.\d+\.\d+)\]', received, re.I)
+        if m:
+            return m.group(1)
+        auth = _decode(msg.get('Authentication-Results', ''))
+        m = re.search(r'ip=(\d+\.\d+\.\d+\.\d+)', auth, re.I)
+        if m:
+            return m.group(1)
+    except Exception:
+        pass
+    return None
+
+
 def extract_emails(creds, folders, start_from, count, fields):
     client = _connect(creds)
     rows = []
@@ -337,6 +417,14 @@ def extract_emails(creds, folders, start_from, count, fields):
                                 row['htmlBody'] = html_body
                             elif f == 'attachments':
                                 row['attachments'] = _attachments(msg)
+                            elif f == 'spfDomain':
+                                row['spfDomain'] = _extract_spf_domain(msg)
+                            elif f == 'spfStatus':
+                                row['spfStatus'] = _extract_spf_status(msg)
+                            elif f == 'dkimStatus':
+                                row['dkimStatus'] = _extract_dkim_status(msg)
+                            elif f == 'senderIP':
+                                row['senderIP'] = _extract_sender_ip(msg)
                         except Exception:
                             pass
                     found += 1
