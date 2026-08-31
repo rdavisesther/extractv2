@@ -463,3 +463,14 @@ $('#autoRefresh').addEventListener('change', (e) => {
 detectProvider();
 updateExtractState();
 renderStats();
+
+// ---------- Theme toggle ----------
+const themeKey = 'extractor-theme';
+const saved = localStorage.getItem(themeKey);
+if (saved === 'light') { document.body.classList.add('light'); $('#themeToggle').textContent = '🌙 Dark'; }
+$('#themeToggle').addEventListener('click', () => {
+  document.body.classList.toggle('light');
+  const isLight = document.body.classList.contains('light');
+  localStorage.setItem(themeKey, isLight ? 'light' : 'dark');
+  $('#themeToggle').textContent = isLight ? '🌙 Dark' : '☀️ Light';
+});
