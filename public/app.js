@@ -395,10 +395,18 @@ $('#copyEmailsBtn').addEventListener('click', async () => {
   const text = list.map((x) => x.row.subject || x.row.fromName || '').filter(Boolean).join('\n');
   await copyText(text || 'No emails found.');
 });
-$('#copyAllBtn').addEventListener('click', async () => {
-  const rows = filteredRows();
-  const text = rows.map((x) => JSON.stringify(x.row)).join('\n');
-  await copyText(text || 'No results.');
+$('#copyDomainsBtn').addEventListener('click', async () => {
+  const sel = allResults.filter((x) => x.selected);
+  const list = sel.length ? sel : allResults;
+  const vals = list.map((x) => x.row.spfDomain).filter(Boolean);
+  const text = [...new Set(vals)].join('\n');
+  await copyText(text || 'No domains found.');
+});
+$('#copyIpSpfBtn').addEventListener('click', async () => {
+  const sel = allResults.filter((x) => x.selected);
+  const list = sel.length ? sel : allResults;
+  const text = list.map((x) => [x.row.senderIP, x.row.spfStatus].filter(Boolean).join(' | ')).filter(Boolean).join('\n');
+  await copyText(text || 'No IP/SPF found.');
 });
 async function copyText(text) {
   try { await navigator.clipboard.writeText(text); toast('Copied to clipboard.'); }
