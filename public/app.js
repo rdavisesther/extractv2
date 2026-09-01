@@ -474,3 +474,34 @@ $('#themeToggle').addEventListener('click', () => {
   localStorage.setItem(themeKey, isLight ? 'light' : 'dark');
   $('#themeToggle').textContent = isLight ? '🌙 Dark' : '☀️ Light';
 });
+
+// ---------- Save / Load mailbox ----------
+const mailboxKey = 'extractor-mailbox';
+function saveMailbox() {
+  const c = credentials();
+  if (!c.email) { toast('Enter an email to save.', 'err'); return; }
+  localStorage.setItem(mailboxKey, JSON.stringify(c));
+  toast('Mailbox saved.');
+}
+function loadMailbox() {
+  try {
+    const data = JSON.parse(localStorage.getItem(mailboxKey));
+    if (!data) return;
+    if (data.email) $('#email').value = data.email;
+    if (data.password) $('#password').value = data.password;
+    if (data.host) $('#host').value = data.host;
+    if (data.port) $('#port').value = data.port;
+    detectProvider();
+  } catch {}
+}
+$('#saveMailboxBtn').addEventListener('click', saveMailbox);
+$('#autoSave').addEventListener('change', (e) => {
+  localStorage.setItem('extractor-autosave', e.target.checked ? '1' : '');
+  if (e.target.checked) saveMailbox();
+});
+if (localStorage.getItem('extractor-autosave') === '1') {
+  $('#autoSave').checked = true;
+  loadMailbox();
+} else {
+  loadMailbox();
+}
