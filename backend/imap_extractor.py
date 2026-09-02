@@ -263,29 +263,41 @@ def _extract_dkim_status(msg):
 
 
 def _extract_sender_ip(msg):
+    ips = []
     try:
         auth = _decode(msg.get('Authentication-Results', ''))
-        m = re.search(r'bringing\s+ IPAddress=(\d+\.\d+\.\d+\.\d+)', auth, re.I)
-        if m:
-            return m.group(1)
         received_spf = _decode(msg.get('Received-SPF', ''))
-        m = re.search(r'designates\s+(\d+\.\d+\.\d+\.\d+)\s+as\s+permitted', received_spf, re.I)
-        if m:
-            return m.group(1)
         received = _decode(msg.get('Received', ''))
-        m = re.search(r'\[(\d+\.\d+\.\d+\.\d+)\]', received)
-        if m:
-            return m.group(1)
-        m = re.search(r'from\s+\S+\s+\((?:helo|HELO|EHLO)?\s*=\s*[\w.-]*\s*\[(\d+\.\d+\.\d+\.\d+)\]', received, re.I)
-        if m:
-            return m.group(1)
-        auth = _decode(msg.get('Authentication-Results', ''))
-        m = re.search(r'ip=(\d+\.\d+\.\d+\.\d+)', auth, re.I)
-        if m:
-            return m.group(1)
+
+        ipv4_pat = re.compile(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})')
+        ipv6_pat = re.compile(r'([0-9a-fA-F:]{2,39}(?::[0-9a-fA-F:]{1,39})*)')
+
+        for src in [auth, received_spf, received]:
+            if not src:
+                continue
+            for m in ipv4_pat.finditer(src):
+                ip = m.group(1)
+                if ip not in ips:
+                    ips.append(ip)
+            for m in ipv6_pat.finditer(src):
+                ip = m.group(1)
+                if ':' in ip and ip not in ('::',) and len(ip) > 3 and ip not in ips:
+                    ips.append(ip)
+
+        received = _decode(msg.get('Received', ''))
+        if received:
+            for m in ipv4_pat.finditer(received):
+                ip = m.group(1)
+                if ip not in ips:
+                    ips.append(ip)
+            for m in ipv6_pat.finditer(received):
+                ip = m.group(1)
+                if ':' in ip and len(ip) > 3 and ip not in ips:
+                    ips.append(ip)
+
     except Exception:
         pass
-    return None
+    return ', '.join(ips) if ips else None
 
 
 def extract_emails(creds, folders, start_from, count, fields):
