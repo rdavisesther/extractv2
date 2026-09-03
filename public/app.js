@@ -223,6 +223,8 @@ async function runExtraction() {
   const folders = selectedFolders();
   if (!folders.length) return;
   busy = true;
+  allResults = [];
+  renderTable();
   $('#extractBtn').disabled = true;
   $('#progressError').classList.add('hidden');
   setProgress(0, 'Connecting to mailbox…');
@@ -390,6 +392,11 @@ function renderStats() {
 }
 
 // ---------- Toolbar actions ----------
+$('#clearResultsBtn').addEventListener('click', () => {
+  allResults = [];
+  renderTable();
+  toast('Results cleared.');
+});
 $('#copyEmailsBtn').addEventListener('click', async () => {
   const sel = allResults.filter((x) => x.selected);
   const list = sel.length ? sel : allResults;
