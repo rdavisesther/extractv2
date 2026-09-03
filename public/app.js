@@ -20,7 +20,8 @@ const FIELDS = [
   ['spfDomain', 'Domains in SPF'],
   ['spfStatus', 'SPF Status'],
   ['dkimStatus', 'DKIM Status'],
-  ['senderIP', 'IP'],
+  ['senderIP', 'IPv4'],
+  ['ipv6', 'IPv6'],
 ];
 
 let allResults = []; // {row, folder, selected}
@@ -195,7 +196,7 @@ function renderFields() {
     const cb = document.createElement('input');
     cb.type = 'checkbox';
     cb.value = key;
-    cb.checked = ['fromName', 'subject', 'spfDomain', 'spfStatus', 'dkimStatus', 'senderIP'].includes(key);
+    cb.checked = ['fromName', 'subject', 'spfDomain', 'spfStatus', 'dkimStatus', 'senderIP', 'ipv6'].includes(key);
     cb.addEventListener('change', updateFields);
     const span = document.createElement('span');
     span.textContent = label;
@@ -230,7 +231,7 @@ async function runExtraction() {
     folders,
     startFrom: parseInt($('#startFrom').value || '1', 10),
     count: parseInt($('#count').value || '100', 10),
-    fields: currentFields.length ? currentFields : ['fromName', 'subject', 'spfDomain', 'spfStatus', 'dkimStatus', 'senderIP'],
+    fields: currentFields.length ? currentFields : ['fromName', 'subject', 'spfDomain', 'spfStatus', 'dkimStatus', 'senderIP', 'ipv6'],
   };
   const t0 = Date.now();
   try {

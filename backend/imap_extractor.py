@@ -262,39 +262,35 @@ def _extract_dkim_status(msg):
     return None
 
 
-def _extract_sender_ip(msg):
+def _extract_ipv4(msg):
     ips = []
     try:
-        auth = _decode(msg.get('Authentication-Results', ''))
-        received_spf = _decode(msg.get('Received-SPF', ''))
-        received = _decode(msg.get('Received', ''))
-
-        ipv4_pat = re.compile(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})')
-        ipv6_pat = re.compile(r'([0-9a-fA-F:]{2,39}(?::[0-9a-fA-F:]{1,39})*)')
-
-        for src in [auth, received_spf, received]:
+        pat = re.compile(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})')
+        for header in ['Authentication-Results', 'Received-SPF', 'Received']:
+            src = _decode(msg.get(header, ''))
             if not src:
                 continue
-            for m in ipv4_pat.finditer(src):
+            for m in pat.finditer(src):
                 ip = m.group(1)
                 if ip not in ips:
                     ips.append(ip)
-            for m in ipv6_pat.finditer(src):
-                ip = m.group(1)
-                if ':' in ip and ip not in ('::',) and len(ip) > 3 and ip not in ips:
-                    ips.append(ip)
+    except Exception:
+        pass
+    return ', '.join(ips) if ips else None
 
-        received = _decode(msg.get('Received', ''))
-        if received:
-            for m in ipv4_pat.finditer(received):
-                ip = m.group(1)
-                if ip not in ips:
-                    ips.append(ip)
-            for m in ipv6_pat.finditer(received):
-                ip = m.group(1)
-                if ':' in ip and len(ip) > 3 and ip not in ips:
-                    ips.append(ip)
 
+def _extract_ipv6(msg):
+    ips = []
+    try:
+        pat = re.compile(r'(?<![:\w])([0-9a-fA-F:]{2,39}(?::[0-9a-fA-F:]{1,39})+)(?![:\w])')
+        for header in ['Authentication-Results', 'Received-SPF', 'Received']:
+            src = _decode(msg.get(header, ''))
+            if not src:
+                continue
+            for m in pat.finditer(src):
+                ip = m.group(1)
+                if ':' in ip and ip not in ips:
+                    ips.append(ip)
     except Exception:
         pass
     return ', '.join(ips) if ips else None
@@ -436,7 +432,9 @@ def extract_emails(creds, folders, start_from, count, fields):
                             elif f == 'dkimStatus':
                                 row['dkimStatus'] = _extract_dkim_status(msg)
                             elif f == 'senderIP':
-                                row['senderIP'] = _extract_sender_ip(msg)
+                                row['senderIP'] = _extract_ipv4(msg)
+                            elif f == 'ipv6':
+                                row['ipv6'] = _extract_ipv6(msg)
                         except Exception:
                             pass
                     found += 1
