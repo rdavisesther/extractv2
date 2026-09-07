@@ -17,7 +17,8 @@ const PROVIDERS = {
 const FIELDS = [
   ['fromName', 'From Name'],
   ['subject', 'Subject'],
-  ['spfDomain', 'Domains in SPF'],
+  ['spfDomain', 'Return-Path Domain'],
+  ['fromDomain', 'From Domain'],
   ['spfStatus', 'SPF Status'],
   ['dkimStatus', 'DKIM Status'],
   ['senderIP', 'IPv4'],
@@ -196,7 +197,7 @@ function renderFields() {
     const cb = document.createElement('input');
     cb.type = 'checkbox';
     cb.value = key;
-    cb.checked = ['fromName', 'subject', 'spfDomain', 'spfStatus', 'dkimStatus', 'senderIP', 'ipv6'].includes(key);
+    cb.checked = ['fromName', 'subject', 'spfDomain', 'fromDomain', 'spfStatus', 'dkimStatus', 'senderIP', 'ipv6'].includes(key);
     cb.addEventListener('change', updateFields);
     const span = document.createElement('span');
     span.textContent = label;
@@ -233,7 +234,7 @@ async function runExtraction() {
     folders,
     startFrom: parseInt($('#startFrom').value || '1', 10),
     count: parseInt($('#count').value || '100', 10),
-    fields: currentFields.length ? currentFields : ['fromName', 'subject', 'spfDomain', 'spfStatus', 'dkimStatus', 'senderIP', 'ipv6'],
+    fields: currentFields.length ? currentFields : ['fromName', 'subject', 'spfDomain', 'fromDomain', 'spfStatus', 'dkimStatus', 'senderIP', 'ipv6'],
   };
   const t0 = Date.now();
   try {
@@ -410,11 +411,16 @@ $('#copyDomainsBtn').addEventListener('click', async () => {
   const text = [...new Set(vals)].join('\n');
   await copyText(text || 'No domains found.');
 });
-$('#copyIpSpfBtn').addEventListener('click', async () => {
+$('#copyIpsBtn').addEventListener('click', async () => {
   const sel = allResults.filter((x) => x.selected);
   const list = sel.length ? sel : allResults;
-  const text = list.map((x) => [x.row.senderIP, x.row.spfStatus].filter(Boolean).join(' | ')).filter(Boolean).join('\n');
-  await copyText(text || 'No IP/SPF found.');
+  const ips = [];
+  list.forEach((x) => {
+    if (x.row.senderIP) ips.push(...x.row.senderIP.split(',').map(s => s.trim()));
+    if (x.row.ipv6) ips.push(...x.row.ipv6.split(',').map(s => s.trim()));
+  });
+  const text = [...new Set(ips.filter(Boolean))].join('\n');
+  await copyText(text || 'No IPs found.');
 });
 async function copyText(text) {
   try { await navigator.clipboard.writeText(text); toast('Copied to clipboard.'); }

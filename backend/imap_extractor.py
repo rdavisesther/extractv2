@@ -210,22 +210,21 @@ def _attachments(msg):
 
 def _extract_spf_domain(msg):
     try:
-        auth = _decode(msg.get('Authentication-Results', ''))
-        if not auth:
-            auth = _decode(msg.get('Received-SPF', ''))
-        m = re.search(r'spf\s*=\s*\w+\s*\(?domain\s+of\s+[\w@.-]+\s+designates\s+([\d.]+)\s+as\s+permitted\s+sender', auth, re.I)
+        return_path = _decode(msg.get('Return-Path', ''))
+        m = re.search(r'@([\w.-]+)', return_path)
         if m:
             return m.group(1)
-        m = re.search(r'spf[=:]\s*\w+\s+.*?domain=([\w@.-]+)', auth, re.I)
+        from_header = _decode(msg.get('From', ''))
+        m = re.search(r'@([\w.-]+)', from_header)
         if m:
             return m.group(1)
-        received = _decode(msg.get('Received', ''))
-        m = re.search(r'from\s+([\w.-]+)\s+\(', received)
-        if m:
-            return m.group(1)
-        m = re.search(r'by\s+([\w.-]+)\s', received)
-        if m:
-            return m.group(1)
+    except Exception:
+        pass
+    return None
+
+
+def _extract_from_domain(msg):
+    try:
         from_header = _decode(msg.get('From', ''))
         m = re.search(r'@([\w.-]+)', from_header)
         if m:
@@ -427,6 +426,8 @@ def extract_emails(creds, folders, start_from, count, fields):
                                 row['attachments'] = _attachments(msg)
                             elif f == 'spfDomain':
                                 row['spfDomain'] = _extract_spf_domain(msg)
+                            elif f == 'fromDomain':
+                                row['fromDomain'] = _extract_from_domain(msg)
                             elif f == 'spfStatus':
                                 row['spfStatus'] = _extract_spf_status(msg)
                             elif f == 'dkimStatus':
