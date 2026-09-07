@@ -281,14 +281,17 @@ def _extract_ipv4(msg):
 def _extract_ipv6(msg):
     ips = []
     try:
-        pat = re.compile(r'(?<![:\w])([0-9a-fA-F:]{2,39}(?::[0-9a-fA-F:]{1,39})+)(?![:\w])')
+        pat = re.compile(r'(?<![:\w])([0-9a-fA-F]{1,4}(?::[0-9a-fA-F]{1,4}){3,7})(?![:\w])')
         for header in ['Authentication-Results', 'Received-SPF', 'Received']:
             src = _decode(msg.get(header, ''))
             if not src:
                 continue
             for m in pat.finditer(src):
                 ip = m.group(1)
-                if ':' in ip and ip not in ips:
+                has_hex = any(c in 'abcdefABCDEF' for c in ip)
+                if not has_hex:
+                    continue
+                if ip not in ips:
                     ips.append(ip)
     except Exception:
         pass
